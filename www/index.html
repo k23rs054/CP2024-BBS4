@@ -57,13 +57,14 @@ function updateCharacterCount(inputId, counterId, maxLength) {
     
     input.on('input', () => {
         const length = input.val().length;
-        counter.text(`${length}/${maxLength}`);
-    
+        counter.text(`残り : ${maxLength-length} 文字`);
+    /*
         if (length > maxLength) {
             counter.addClass('error');
         } else {
             counter.removeClass('error');
         }
+        */
     });
 }
 
@@ -97,6 +98,53 @@ function validateAuthInput(email, password, isRegister = false) {
     return true;
 }
 
+//メールアドレスでユーザーを検索してUIDを取得
+function getUserUIDByEmail(email) {
+  const db = firebase.database();
+  
+  db.ref('users').orderByChild('email').equalTo(email).once('value')
+    .then((snapshot) => {
+      if (snapshot.exists()) {
+        snapshot.forEach((childSnapshot) => {
+          const userUID = childSnapshot.key;  // UIDはドキュメントのキーとして保存
+          console.log('Found user UID:', userUID);
+          // メッセージを送信する処理を呼び出す
+          sendMessage(userUID, "Hello! This is a test message.");
+        });
+      } else {
+        console.log('No user found with this email.');
+      }
+    })
+    .catch((error) => {
+      console.error("Error getting user UID by email:", error);
+    });
+}
+
+//メッセージの送信
+function sendMessage(receiverUID, message) {
+  const user = firebase.auth().currentUser;
+  if (user) {
+    const senderUID = user.uid;  // 現在ログインしているユーザーのUID
+
+    // Realtime Databaseにメッセージを保存
+    const db = firebase.database();
+    const newMessageKey = db.ref('messages').push().key;
+
+    db.ref('messages/' + newMessageKey).set({
+      senderUID: senderUID,
+      receiverUID: receiverUID,
+      message: message,
+      timestamp: firebase.database.ServerValue.TIMESTAMP
+    }).then(() => {
+      console.log('Message sent!');
+    }).catch((error) => {
+      console.error('Error sending message:', error);
+    });
+  }
+}
+
+
+
 // 投稿処理
 function createPost(author, content) {
     if (!currentUser) {
@@ -108,6 +156,8 @@ function createPost(author, content) {
 
     const button = $('#postButton');
     button.prop('disabled', true);
+    const button2 = $('#postButton');
+    button2.prop('disabled', true);
 
     // author はログインしているユーザのメールアドレスに変更、userId を追加
     const postData = {
@@ -396,6 +446,7 @@ function login(email, password) {
         .then(() => {
             showMessage('ログインしました');
             clearAuthForm();
+            saveUserInfoToRealtimeDatabase()
         })
         .catch((error) => {
             showMessage(getAuthErrorMessage(error), 'error');
@@ -404,6 +455,37 @@ function login(email, password) {
             button.prop('disabled', false);
         });
 }
+
+//Realtime Databaseでユーザー情報を保存
+function saveUserInfoToRealtimeDatabase() {
+  const user = firebase.auth().currentUser;
+  if (user) {
+    const db = firebase.database();
+    db.ref('users/' + user.uid).set({
+      email: user.email,
+      displayName: user.displayName
+    }).then(() => {
+      console.log('User information saved to Realtime Database');
+    }).catch((error) => {
+      console.error('Error saving user information:', error);
+    });
+  }
+}
+
+
+/*
+// ユーザーのプロフィール情報を更新する
+const user = firebase.auth().currentUser;
+
+user.updateProfile({
+  displayName: 'ユーザー名',  // ここにユーザー名を設定
+  photoURL: '画像のURL'      // 任意でプロフィール画像を設定することも可能
+}).then(() => {
+  console.log('Display name updated!');
+}).catch((error) => {
+  console.error('Error updating display name:', error);
+});
+*/
 
 // 新規登録処理
 function register(email, password) {
@@ -482,7 +564,8 @@ $(function() {
         // 投稿内容をフォームから取得
         const authorVal = $('#authorInput').val();
         const contentVal = $('#contentInput').val();
-        createPost(authorVal, contentVal);
+        const email = getUserUIDByEmail($('#contentInput2').val());
+        createPost(authorVal, contentVal, email);
     });
 
     $('#loginButton').on('click', function() {
@@ -549,11 +632,16 @@ window.addEventListener('unload', function() {
 
         <!-- 投稿フォーム（ログイン時表示） -->
         <div class="post-form logged-in">
+            <div class="form-group2">
+                <label for="contentInput2">E-mail</label>
+                <textarea id="contentInput2" class="form-control2" 
+                          placeholder="UID"></textarea>
+            </div>
             <div class="form-group">
                 <label for="contentInput">投稿内容</label>
                 <textarea id="contentInput" class="form-control" 
                           placeholder="投稿内容を入力してください"></textarea>
-                <small class="character-count" id="contentCount">0/1000</small>
+                <small class="character-count" id="contentCount">10</small>
             </div>
             <div class="button-group">
                 <button id="postButton" class="btn-primary">投稿する</button>
